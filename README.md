@@ -1,13 +1,13 @@
 # Easy Data × AI 学习笔记
 
-Datawhale 第 84 期，队「日拱一卒」，我在 1 群。9/14 开营，29 天 9 个 Task。
+Datawhale 第 84 期，队「日拱一卒」，1 群。9/14 开营，29 天 9 个 Task。
 
-这份笔记只有一份，每学完一个 Task 往下加一节，链接从头用到尾。
+笔记只此一份，每个 Task 追加一节，链接固定不变。
 
 - 教程仓库：https://github.com/datawhalechina/easy-data-x-ai
 - 在线阅读：https://datawhalechina.github.io/easy-data-x-ai
 
-| Task | 干什么 | 状态 | 日期 |
+| Task | 内容 | 状态 | 日期 |
 |---|---|---|---|
 | Task 1 | 环境准备与课前导读 | 完成 | 9/15 |
 | Task 2 | | | |
@@ -23,43 +23,45 @@ Datawhale 第 84 期，队「日拱一卒」，我在 1 群。9/14 开营，29 �
 
 ## Task 1 环境准备与课前导读（9/15）
 
-### 先把自己机器查清楚
-
-开工第一件事不是读教程，是查环境。逐项跑了一遍：
+### 环境自检
 
 | 检查项 | 实测 | 判定 |
 |---|---|---|
-| Shell | zsh 5.9（/bin/zsh 是默认） | 够用 |
-| Python | 默认 `python3` 是 3.12.13，3.11.15 也装了但没在用 | 课程要 3.11，得手动指定 |
-| venv / pip / uv | 都正常，建出来的环境是 3.11.15 | 通过 |
-| Git | 2.54.0，但 user.name / user.email 是空的 | 补配置 |
-| 网络 | github 直连 443 超时，走本机代理才通 | 得配代理 |
-| 模型 API | 手上有个 OpenAI 兼容的中转 key，能用 | 通过 |
-| 磁盘 | 剩 646G | 通过 |
+| Shell | zsh 5.9，/bin/zsh 为默认 | 可用 |
+| Python | 默认 `python3` 为 3.12.13，3.11.15 已安装但非默认 | 需显式指定 3.11 |
+| venv / pip / uv | 建出 3.11.15 环境，pip 26.2.1，uv 0.11.11 | 可用 |
+| Git | 2.54.0，user.name / user.email 为空 | 已补配置 |
+| 网络 | github 直连 443 超时 75 秒，走本机代理 127.0.0.1:7897 成功 | 拉代码走代理 |
+| 模型 API | 已有 OpenAI 兼容接口的中转 key | 可用 |
+| 磁盘 | 可用 646 GB，仓库 clone 后占 309 MB | 充足 |
 
-两个地方值得单说。
+三处需要处理：
 
-一个是 Python 版本。我机器上敲 `python3` 出来的是 3.12.13，课程要求 3.11。照文档直接 `python3 -m venv .venv` 建出来的就是 3.12 环境，后面会不会出问题全看运气。还是老实指定版本：`uv venv --python 3.11 --seed .venv`。这类坑最烦，它不当场炸，专挑你忘了的时候炸。
+Python 版本不一致。本机默认 `python3` 是 3.12.13，课程要求 3.11。按文档直接执行 `python3 -m venv .venv` 会建出 3.12 环境，问题不会立刻暴露。正确做法是显式指定版本：`uv venv --python 3.11 --seed .venv`。
 
-另一个是网络。github 直连卡了 75 秒然后失败，443 根本不通，得走本机代理才把仓库拉下来。有意思的是装依赖反过来：走国内 PyPI 镜像的时候要绕开代理才快。同一个出口，两种走法，第一次配环境的人基本都要栽一下。
+网络出口分两种情况。github 直连 443 端口超时，拉取代码必须走本机代理；安装依赖相反，走国内 PyPI 镜像并绕开代理更快。同一条网络，两个方向的处理方式不同，初次配置容易只记住其中一种。
 
-还有 Git 身份是空的。这个不算坑，算懒，顺手配掉就完事了，不然以后交 PR 一定卡。
+Git 全局身份为空。不补 `user.name` 和 `user.email`，后续提交会直接失败，已配置。
 
-### 把课程给的代码真跑一遍
+### 运行记录
 
-clone、建环境、装依赖、`pip check`，一路绿灯。然后跑那个不用 API Key 的离线评测：
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| clone | `git clone https://github.com/datawhalechina/easy-data-x-ai.git` | commit e5c4d076，落盘 309 MB |
+| 建环境 | `uv venv --python 3.11 --seed .venv` | Python 3.11.15 |
+| 装依赖 | `pip install -r code/requirements-test.txt` | langchain 1.4.0、langgraph 1.2.11、ragas 0.2.15、openai 3.14.0、pyseekdb 1.4.0 等 |
+| 依赖体检 | `pip check` | No broken requirements found |
+| 离线评测 | `PYTHONPATH=code/D3:code python code/D3/d3_5_evaluate.py` | 退出码 0，60 条案例，失败 0 |
 
-```
-PYTHONPATH=code/D3:code python code/D3/d3_5_evaluate.py
-```
+离线评测不需要 API Key，因此无需等待模型额度即可验证整条链路。
 
-60 条案例，失败 0 条，Hit@1 = 0.92，Hit@3 = 1.0，MRR = 0.9533，拒答准确率 1.0。六类用例（alias_rewrite、boundary、exact_identifier、insufficient_evidence、multi_hop、semantic）通过率全是 1.0。
+### 离线评测结果
 
-原始报告我原样放进仓库了：[`task1/reports/offline-evaluation.md`](task1/reports/offline-evaluation.md)。
+原始报告：[`task1/reports/offline-evaluation.md`](task1/reports/offline-evaluation.md)
 
-### 那张三种策略的对比表，我盯了很久
+60 条案例，失败 0。Hit@1 = 0.92，Hit@3 = 1.0，MRR = 0.9533，上下文召回率 1.0，拒答准确率 1.0。六类用例（alias_rewrite、boundary、exact_identifier、insufficient_evidence、multi_hop、semantic）通过率均为 1.0。
 
-同一次运行里还给了三种检索方案的对比：
+同一次运行还给出三种检索方案的对比：[`task1/reports/strategy-comparison.md`](task1/reports/strategy-comparison.md)
 
 | 方案 | Hit@1 | Hit@3 | 拒答准确率 | P50 / P95（ms） | 估算 Token |
 |---|---:|---:|---:|---:|---:|
@@ -67,27 +69,23 @@ PYTHONPATH=code/D3:code python code/D3/d3_5_evaluate.py
 | 混合检索 | 0.88 | 0.98 | 1.0 | 0.30 / 0.34 | 14691 |
 | 工程管线 | 0.92 | 1.0 | 1.0 | 0.53 / 0.81 | 15124 |
 
-原始报告：[`task1/reports/strategy-comparison.md`](task1/reports/strategy-comparison.md)。
+命中率上三者差距有限，纯向量基线 Hit@3 也有 0.76。真正的差别在拒答准确率：纯向量基线 0.6，混合检索与工程管线均为 1.0，即十个证据不足的问题里，纯向量方案仍有四个会给出答案。代价是延迟约翻倍、Token 多两成。
 
-我想说的不是那几个小数。
+报告的指标口径也需注意：Token 为字符长度推算值，延迟只含本地编排开销，均不等同于服务商账单。
 
-纯向量基线在"证据够"的问题上看着完全能用，Hit@3 也有 0.76，延迟还最短。差别全在证据不够的时候冒出来：它的拒答准确率只有 0.6，也就是说十个答不了的问题里有四个，它会硬编一个答案给你。混合检索和工程管线把这一项做到 1.0，代价是延迟翻倍、Token 多两成。
-
-这跟我自己做企业 IT 方案碰到的是同一个问题。纯向量检索好看，是因为评测集里"答案就在库里"的题多；一上真实业务，用户问的十有八九是库里没有的东西。到那时候系统能不能管住自己的嘴，比它答得多流畅重要得多。
-
-### 踩过的坑，记下来免得再踩
+### 踩坑
 
 1. 默认 `python3` 是 3.12，课程要 3.11，必须 `uv venv --python 3.11`。
-2. github 直连不通，拉代码走代理，装包走国内镜像并且绕开代理。
-3. 本机有别的 Python 环境变量在捣乱，跑课程脚本前要 `env -u PYTHONPATH -u VIRTUAL_ENV` 清一遍，否则会串解释器。
-4. Git 的 `user.name` / `user.email` 是空的一定要补。
-5. 报告里的 Token 是字符长度估算的，延迟也只算本地编排开销，别当服务商账单看。
+2. github 直连不通：拉代码走代理，装包走国内镜像并绕开代理。
+3. 本机已有其他 Python 环境变量，运行课程脚本前需 `env -u PYTHONPATH -u VIRTUAL_ENV` 清理，否则会串到别的解释器。
+4. Git 的 `user.name` / `user.email` 为空必须补，否则提交失败。
+5. 报告中的 Token 与延迟口径有限，不能当作账单依据。
 
-### 导读看下来，记住一句话
+### 导读
 
-F1《大模型的本质与边界》和 F2《AI Agent 全景图》两篇公共基础都看了。课程本身分「道篇」和「术篇」，道篇讲怎么做判断（P1 到 P5），术篇讲怎么动手写（D1 到 D5），后面还有产业篇和扩展章。
+F1《大模型的本质与边界》、F2《AI Agent 全景图》两篇公共基础已读。课程分「道篇」P1–P5（判断力）与「术篇」D1–D5（工程实现），另有产业篇与扩展章。
 
-记住的是一句听着很扫兴的话：不是所有需求都该做成 Agent。它的边界在数据层，不在模型层。我今天跑的那个评测正好在印证这件事，指标的天花板是数据给的，不是模型给的。
+F1、F2 的结论可以直接对应到今天的评测数据：不是所有需求都该做成 Agent，边界在数据层而非模型层。指标的上限由数据决定，不由模型决定。
 
 ---
 
@@ -98,4 +96,4 @@ F1《大模型的本质与边界》和 F2《AI Agent 全景图》两篇公共基
 - Task 安排：https://my.feishu.cn/wiki/HvQuwKiSEi0mNBkGzjBcJaldnrd
 - 打卡表单：https://magicyang.feishu.cn/share/base/shrcnPJP4DBbYWnQrnUPrgRa7rf
 - 评测数据：教程仓库 `code/D3/reports/offline-evaluation.md`、`code/D3/reports/strategy-comparison.md`
-- 环境与运行记录：本人 2026-09-15 在 macOS 上实测
+- 环境与运行记录：2026-09-15 于 macOS 实测
