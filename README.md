@@ -11,7 +11,7 @@ Datawhale 第 84 期，队「日拱一卒」，1 群。9/14 开营，29 天 9 �
 |---|---|---|---|
 | Task 1 | 环境准备与课前导读 | 完成 | 9/15 |
 | Task 2 | P1 场景识别 / D1 大模型 API 入门 / I1 AI 原生数据系统 | 完成（逾期补交） | 9/21 |
-| Task 3 | | | |
+| Task 3 | P2 RAG 产品设计 / I2 向量数据库与 RAG | 完成（提前 1 天） | 9/21 |
 | Task 4 | | | |
 | Task 5 | | | |
 | Task 6 | | | |
@@ -182,6 +182,68 @@ env -u PYTHONPATH -u VIRTUAL_ENV NO_PROXY='*' SEEKDB_MODE=embedded \
 
 ---
 
+## Task 3 P2 RAG 产品设计 / I2 向量数据库与 RAG（9/21）
+
+截止 09-23 03:00，提前一天半做完。
+
+### 任务要求
+
+1. 了解 RAG 的基础流程，以及向量数据库中混合搜索的含义
+2. 预习并跑通 `code/D2` 的 `d2_1` 到 `d2_2`
+
+### 运行记录
+
+| 示例 | 内容 | 退出码 | 日志 |
+|---|---|---|---|
+| `d2_1_ingest` | 8 条原始文档切分后写入 seekdb | 0 | [log](task3/logs/d2_1_ingest.log) |
+| `d2_2_vector_search` | 语义检索 + 精确编号检索 | 0 | [log](task3/logs/d2_2_vector_search.log) |
+
+### 第一次跑 d2_2 返回 0 条
+
+`d2_1` 正常：8 条文档、8 个片段、8 条入库。接着跑 `d2_2`，两路检索都是「（无结果）」，脚本自己判定「不能断言语义检索成功」。数据明明在库里，`get()` 能读回全部原文和 metadata，`count()` 也是 8，查询却一条不返。
+
+排查顺序：
+
+1. 换 `query_embeddings` 自己传 384 维向量 → 还是 0 条。
+2. 换 `QueryHint(vector_index=False)` 关掉向量索引提示 → 还是 0 条。
+3. 做最小复现（[`task3/d2_minimal_repro.py`](task3/d2_minimal_repro.py)）：全新 embedded 库，建集合、写 3 条、直接查 → **依然 0 条**。到这一步可以断定与课程代码无关，是本机 pyseekdb 1.4.0.post1 embedded 模式下向量查询的问题。
+4. 看 `code/D2/seekdb/log/seekdb.log`：查询期出现 `check_table_exist_or_not ... table not exist(..., table_name=c$v1$d2_knowledge_base, ret=-5019)`，同时能看到 HNSW 参数里 `sync_mode_async:true, sync_interval_value:10`。
+5. 查 `Collection` 的接口，发现 `has_vector_index` 属性为 **False**，并有 `refresh_index()` 方法。定位到根因：**集合建出来了、数据写进去了，但向量索引没有真正建起来；而查询语句带 `APPROXIMATE`，没有索引就查不出东西。**
+
+修复：在写入之后补一步 `collection.refresh_index()`（[`task3/d2_refresh_index.py`](task3/d2_refresh_index.py)）。这个动作对课程代码零侵入，索引建好后 `d2_2` 立刻正常。
+
+```
+集合: d2_knowledge_base | 条数: 8 | 建索引前 has_vector_index: False
+建索引前查询结果数: 0
+refresh_index() 已执行 | 建索引后查询结果数: 3
+```
+
+（`has_vector_index` 在 refresh 之后仍显示 False，实际检索已可用，属性刷新时机与索引状态不完全同步，属于库自身的行为。）
+
+课程 README 里写了 macOS 没有匹配的原生扩展时应改走 Server 模式，本来想按那条路再验一遍；本机 Docker Desktop 的 daemon 起不来（只有 `com.docker.vmnetd` 在跑，`docker.sock` 不存在），这一步留作待办，走的是 embedded + `refresh_index()` 这条。
+
+### 修复后的真实输出
+
+**语义检索**，问「怎么设计用户权限」，返回 3 条，分数 0.4674 / 0.5577 / 0.5729，内容分别是连接池配置、数据备份、查询性能优化，**没有一条命中知识库里的 RBAC 访问控制文档**——脚本自己也打了 ⚠️。
+
+**精确编号检索**，问「错误码 E-4012 的解决方案」，第一名恰好是 E-4012，分数 0.2061。
+
+这两条结果放在一起，正好是这节课要讲的东西：纯向量检索会漏语义（问「用户权限」没召回 RBAC 那条），也能在精确编号上偶然命中，但名次不保证。要稳定，就得混合搜索——向量、全文、标量过滤一起上。这就是 P2 第四部分说的三层作用。
+
+### P2 阅读笔记
+
+- RAG 基础流程六步：数据准备 → 改写与路由 → 搜索召回 → 融合与重排 → 上下文组织与生成 → 评估与反馈闭环。
+- 传统 RAG 是无环流程，可以很复杂，但流程是写死的；Agentic RAG 的关键不是更复杂，而是有了**循环**——能判断要不要搜、够不够、换不换角度再搜一次。D1 的 `d1_6` 里那个连着检索两次的 Agent，就是这条的实证。
+- 混合搜索：同时支持向量语义搜索、关键词全文搜索、标量过滤，把复杂度内置到数据库层。它的价值不只是「搜得更准一点」，而是决定 RAG 能不能自然演进成可编排、可评估的系统。
+- 三层归因框架：数据层（检索不到 / 检索到了错的）、模型层（幻觉）、业务层（答案对但不合场景）。实践里 60%~80% 的问题在数据层，模型幻觉只占 10%~20%。PM 最常见的误诊是「换个更好的模型」。
+- 要留下的印象：用户说「AI 答得不好」，第一反应不该是换模型，而是先问 R 做对了吗、数据准备对了吗、检索路径对了吗。
+
+### 课后行动（初步）
+
+拿归因决策树看手上的门店业务问答：一线问「提成怎么算」答错时，先查知识库里有没有正确答案——现在是散落的旧版本，属数据层·内容覆盖；再看检索路径——现在基本靠关键词命中，属数据层·检索策略；最后才轮到模型。结论和 Task 2 那次评估一致：先收数据，再谈检索策略，模型层排最后。
+
+---
+
 ## 引用来源
 
 - 教程仓库：https://github.com/datawhalechina/easy-data-x-ai
@@ -189,6 +251,6 @@ env -u PYTHONPATH -u VIRTUAL_ENV NO_PROXY='*' SEEKDB_MODE=embedded \
 - Task 安排：https://my.feishu.cn/wiki/HvQuwKiSEi0mNBkGzjBcJaldnrd
 - 打卡表单：https://magicyang.feishu.cn/share/base/shrcnPJP4DBbYWnQrnUPrgRa7rf
 - 评测数据：教程仓库 `code/D3/reports/offline-evaluation.md`、`code/D3/reports/strategy-comparison.md`
-- 运行日志：本仓库 `task2/logs/*.log`（2026-09-21 实跑）
+- 运行日志：本仓库 `task2/logs/*.log`、`task3/logs/*.log`（2026-09-21 实跑）
 - 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`
 - 环境与运行记录：2026-09-15 于 macOS 实测
