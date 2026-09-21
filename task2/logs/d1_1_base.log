@@ -1,0 +1,2 @@
+[override] MODEL_NAME: tencent/Hunyuan-MT-7B -> deepseek-chat
+RAG（检索增强生成）是一种让大模型在生成回答前，先从外部知识库检索相关信息，再结合这些信息作答的技术，能提升准确性和时效性。

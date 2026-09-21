@@ -10,7 +10,7 @@ Datawhale 第 84 期，队「日拱一卒」，1 群。9/14 开营，29 天 9 �
 | Task | 内容 | 状态 | 日期 |
 |---|---|---|---|
 | Task 1 | 环境准备与课前导读 | 完成 | 9/15 |
-| Task 2 | | | |
+| Task 2 | P1 场景识别 / D1 大模型 API 入门 / I1 AI 原生数据系统 | 完成（逾期补交） | 9/21 |
 | Task 3 | | | |
 | Task 4 | | | |
 | Task 5 | | | |
@@ -89,6 +89,99 @@ F1、F2 的结论可以直接对应到今天的评测数据：不是所有需求
 
 ---
 
+## Task 2 P1 场景识别 / D1 大模型 API 入门（9/21）
+
+任务窗口是 9/17–9/19，截止 9/20 03:00。我这两天在赶另一条业务线，没对照任务表确认日期，9/21 才补做。后面几个 Task 按硬日期提前一天交。
+
+### 任务要求
+
+1. 获取用于测试的 API Key
+2. 安装 pyseekdb SDK
+3. 跑通 `code/D1` 的 `d1_1` ~ `d1_6`，体验从大模型基础调用到「推理 → 行动 → 观察」多轮循环的演进
+
+### API Key 与模型
+
+本机没有 SiliconFlow 和 DashScope 的账号。可用的是两类 OpenAI 兼容接口：DeepSeek 官方接口，以及一个中转站。中转站的 `/v1/models` 只提供 GPT 系列，试调用返回 upstream error，不能作为测试底座，最终选 DeepSeek 官方接口。
+
+示例代码从 `code/.env` 读配置，写入下面四项（文件权限 600）：
+
+```
+SILICONFLOW_API_KEY=<DeepSeek API Key>
+SILICONFLOW_BASE_URL=https://api.deepseek.com/v1
+DASHSCOPE_API_KEY=<同上>
+DASHSCOPE_BASE_URL=https://api.deepseek.com/v1
+```
+
+示例里写死的模型名本机调不到：`d1_1`~`d1_5` 用 SiliconFlow 的 `tencent/Hunyuan-MT-7B`，`d1_6` 用 DashScope 的 `qwen-plus`，直接运行会拿到 400（`The supported API model names are ...`）。示例代码一行未改，用一个运行器在运行时替换模型名：
+
+- 走模块常量 `MODEL_NAME` 的（`d1_1`~`d1_3`、`d1_5`、`d1_6`）：覆盖模块属性；
+- `d1_4` 把模型名写在 `main` 函数里：改为传一个 wrapper 作为 `model_factory`。
+
+运行器与命令见 [`task2/d1_runner.py`](task2/d1_runner.py)：
+
+```bash
+env -u PYTHONPATH -u VIRTUAL_ENV NO_PROXY='*' SEEKDB_MODE=embedded \
+  PYTHONPATH=code/D1:code .venv/bin/python task2/d1_runner.py d1_1_base
+```
+
+### pyseekdb
+
+已随 `requirements-test.txt` 装好，版本 1.4.0.post1。本机 `pylibseekdb` 可加载，走 Embedded 模式，不用 Docker 起 Server，少一层依赖。
+
+第一次运行 `d1_5`/`d1_6` 失败，报 `Failed to download model from Hugging Face`。原因是 pyseekdb 的默认嵌入函数用 onnx 版 `all-MiniLM-L6-v2`，首次调用时才去下载，六个文件没有下全。从 hf-mirror 手动补齐到 `~/.cache/pyseekdb/onnx_models/all-MiniLM-L6-v2/onnx/` 后正常——目录完整时 pyseekdb 不再联网。
+
+### 运行记录
+
+| 示例 | 演示内容 | 退出码 | 日志 |
+|---|---|---|---|
+| `d1_1_base` | 一次基础调用 | 0 | [log](task2/logs/d1_1_base.log) |
+| `d1_2_multi_turn` | 多轮对话，带上下文 | 0 | [log](task2/logs/d1_2_multi_turn.log) |
+| `d1_3_streaming` | 流式输出 | 0 | [log](task2/logs/d1_3_streaming.log) |
+| `d1_4_tool_use_mock` | 工具调用，知识库是本地假数据 | 0 | [log](task2/logs/d1_4_tool_use_mock.log) |
+| `d1_5_tool_use_seekdb` | 工具调用，背后接真实的 seekdb | 0 | [log](task2/logs/d1_5_tool_use_seekdb.log) |
+| `d1_6_agent` | `create_agent` 搭出的完整 Agent | 0 | [log](task2/logs/d1_6_agent.log) |
+
+### 真实输出
+
+`d1_4`：模型决定调用 `query_knowledge_base`，参数 `seekdb 支持哪些检索方式？混合检索是怎么实现的？`，拿到两条知识库文本，最后在回答里明确写出「知识库中没有检索到混合检索的具体实现」。工具调用链路通了，同时能看出模型有事实锚点时的分寸——它没有编。
+
+`d1_5`：两次调用 `search_seekdb`，参数分别是 `{'query': 'seekdb 支持哪些检索方式 向量检索 全文检索'}` 和 `{'query': 'seekdb 混合检索 hybrid search 实现'}`；每次返回三条文档，最终回答落到 RRF（倒数排名融合）。与 `d1_4` 的差别在于工具背后真的连着一个向量库。
+
+`d1_6`：3 个问题，8 次工具调用，8 次观察。第一个问题问 Agentic RAG 与传统 RAG 的区别，Agent 连着检索两次（换角度再查一遍），然后给出「传统 RAG 是每次都查、只查一次；Agentic RAG 是按需查、可反复查」。这就是 F2 讲的「感知 → 推理 → 行动」循环，也解释了为什么把 Agent 放在 D1 的最后一个示例。
+
+一句关于模型选型的补充：`Hunyuan-MT-7B` 本身是翻译模型，`d1_1` 问它「什么是 RAG」它照样答对了。课程示例的模型选型不必照抄，链路和边界才是重点；换成 `deepseek-chat` 后六个示例的输出都可用。
+
+### 踩坑
+
+1. 模型名有两处硬编码：模块常量 `MODEL_NAME`（`d1_1`~`d1_3`、`d1_5`、`d1_6`）和 `main` 函数内部（`d1_4`）。只覆盖常量对 `d1_4` 无效。
+2. 缺 `code/.env` 时，示例在创建模型之前就停下（`require_api_key` 做的边界校验），不产生任何外部调用。这个设计值得自己写代码时借鉴。
+3. onnx 嵌入模型是首次调用时才下载，失败提示只写「检查网络」，看代码才知道实际是下载中断、目录不完整。报错文案和真实原因差一层。
+4. 本机代理 7897 当时不可用，hf-mirror 直连反而通（`NO_PROXY='*'`），与拉 GitHub 代码的结论相反。
+
+### P1 阅读笔记
+
+一句话判断：90% 的 AI 功能失败不是模型不行，而是立项时没人问一句「数据在哪」。
+
+- 能力上限 = 数据质量 × 模型能力 + 流程编排。
+- 三个维度：数据可得性（地基，最容易被低估，也最容易在立项阶段验证）、任务可定义性（LLM 是概率生成，「怎么算做对」比传统软件复杂，关键看有没有事实锚点）、流程编排（Agent 与 Workflow 是一个光谱，第一个 AI 项目优先 Workflow）。
+- Agent 的三个甜区：意图模糊需要语义理解、需要调用外部工具、需要持续交互。命中两个以上才值得考虑。
+- 不该上 Agent 的三类：固定答案的 FAQ、结构化数据查询、对准确性零容忍的计算。用 Agent 做这三件事是过度工程化，代价不只是浪费开发资源，还比原方案更慢、更贵、更容易出错。
+
+### 用 Checklist 评估手上的一个需求
+
+我手上有一个门店类业务，一线最常问的是流程和标准（怎么报单、提成怎么算、活动怎么执行），新人反复问同一批问题。用 P1 的 Checklist 过了一遍：
+
+| 维度 | 判断 |
+|---|---|
+| 场景匹配 | 意图不精确、答案散在多个文档和群聊记录里、同一批问题反复被问 —— 命中，值得考虑 |
+| 数据可得性 | 部分存在。SOP 有文档，但版本多、散落在几处，最近一次统一整理是几个月前。10 个典型问题的答案数据核对还没做完，先按「部分存在」计 |
+| 任务可定义性 | 有事实锚点（答案就是文档里的某一段，可以回读原文对照），能定义 |
+| 流程编排 | 选 Workflow。第一版只做「检索 → 回答 → 人工可确认」，不做全自主 Agent。答错政策条款的代价不能接受 |
+
+结论：先投数据层——把散在各处的 SOP 收敛成一份有版本号、可检索的文档，再谈 Agent。这跟 P1 的判断一致：数据可得性是立项阶段最容易验证的一维，半天就能查完，能省下几个月的弯路。
+
+---
+
 ## 引用来源
 
 - 教程仓库：https://github.com/datawhalechina/easy-data-x-ai
@@ -96,4 +189,6 @@ F1、F2 的结论可以直接对应到今天的评测数据：不是所有需求
 - Task 安排：https://my.feishu.cn/wiki/HvQuwKiSEi0mNBkGzjBcJaldnrd
 - 打卡表单：https://magicyang.feishu.cn/share/base/shrcnPJP4DBbYWnQrnUPrgRa7rf
 - 评测数据：教程仓库 `code/D3/reports/offline-evaluation.md`、`code/D3/reports/strategy-comparison.md`
+- 运行日志：本仓库 `task2/logs/*.log`（2026-09-21 实跑）
+- 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`
 - 环境与运行记录：2026-09-15 于 macOS 实测
