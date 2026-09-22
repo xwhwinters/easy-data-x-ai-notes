@@ -220,7 +220,9 @@ refresh_index() 已执行 | 建索引后查询结果数: 3
 
 （`has_vector_index` 在 refresh 之后仍显示 False，实际检索已可用，属性刷新时机与索引状态不完全同步，属于库自身的行为。）
 
-课程 README 里写了 macOS 没有匹配的原生扩展时应改走 Server 模式，本来想按那条路再验一遍；本机 Docker Desktop 的 daemon 起不来（只有 `com.docker.vmnetd` 在跑，`docker.sock` 不存在），这一步留作待办，走的是 embedded + `refresh_index()` 这条。
+课程 README 里写了 macOS 没有匹配的原生扩展时应改走 Server 模式，这条也补验了：Docker 起不来先卡了一次（Docker Hub 拉不动，换 `docker.m.daocloud.io` 镜像源拉到镜像并重打 tag），容器起来后先 `CREATE DATABASE easy_data_x_ai_demo`（compose 的环境变量这次没有自动建库），再跑——
+
+**Server 模式下，`d2_2` 不做 `refresh_index()` 也能直接查出结果**，同样的 3 条、同样的分数、同样没命中 RBAC 文档。所以那个索引没建起来的问题是 **embedded 模式特有的**：Server 模式写入即建索引，embedded 模式要显式 `refresh_index()`。
 
 ### 修复后的真实输出
 
