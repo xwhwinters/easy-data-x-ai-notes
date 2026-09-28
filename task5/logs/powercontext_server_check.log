@@ -1,0 +1,14 @@
+$ powercontext live / ready / capabilities
+Status: ok
+Status: ready
+database: ready
+runtime: ready
+Source types: content
+Artifact families: memory, experience, skill, handoff
+Memory extraction: disabled
+Experience generation: disabled
+Managed Skill generation: disabled
+External Skill Registry: disabled
+Handoff generation: disabled
+Search modes: auto, fts
+Context versions: powercontext.prepared-context.v1

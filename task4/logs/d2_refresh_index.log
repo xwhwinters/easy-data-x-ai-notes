@@ -1,0 +1,3 @@
+集合: d2_knowledge_base | 条数: 8 | 建索引前 has_vector_index: False
+建索引前查询结果数: 0
+refresh_index() 已执行 | 建索引后 has_vector_index: False | 查询结果数: 3

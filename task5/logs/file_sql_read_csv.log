@@ -1,0 +1,7 @@
+$ mysql -e "SELECT file FROM glob('/workspace/*')"
+ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your OceanBase version for the right syntax to use near '('/workspace/*')' at line 1
+
+$ mysql -e "SELECT customer_id, COUNT(*), SUM(amount) FROM orders_import WHERE status='paid' GROUP BY customer_id HAVING SUM(amount)>1000"
+customer_id	order_count	total_amount
+C02	2	4100.00
+C01	1	1200.00

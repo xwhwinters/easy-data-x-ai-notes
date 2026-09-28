@@ -12,8 +12,8 @@ Datawhale 第 84 期，队「日拱一卒」，1 群。9/14 开营，29 天 9 �
 | Task 1 | 环境准备与课前导读 | 完成 | 9/15 |
 | Task 2 | P1 场景识别 / D1 大模型 API 入门 / I1 AI 原生数据系统 | 完成（逾期补交） | 9/21 |
 | Task 3 | P2 RAG 产品设计 / I2 向量数据库与 RAG | 完成（提前 1 天） | 9/21 |
-| Task 4 | | | |
-| Task 5 | | | |
+| Task 4 | D2 统一 AI Native 数据层 / I3 SQL × AI | 完成（逾期补交，AI Function 待办） | 9/28 |
+| Task 5 | P3 记忆系统设计 / I4 File SQL for AI Agent | 完成（PowerContext 实跑） | 9/28 |
 | Task 6 | | | |
 | Task 7 | | | |
 | Task 8 | | | |
@@ -246,6 +246,79 @@ refresh_index() 已执行 | 建索引后查询结果数: 3
 
 ---
 
+## Task 4 D2 统一 AI Native 数据层 / I3 SQL × AI（9/28 补做）
+
+截止 09-26 03:00，逾期两天补做。
+
+### 任务要求
+
+1. 跑通 `code/D2` 的 `d2_1`~`d2_5`，体验 Data 在 AI 应用里如何被承载（向量化、存储、查询）与混合搜索
+2. 通过 pyseekdb 执行 AI Function，了解在数据库里调用 AI 的方式
+
+### 运行记录
+
+| 示例 | 内容 | 退出码 | 日志 |
+|---|---|---|---|
+| `d2_1_ingest` | 8 条文档切分写入 | 0 | [log](task4/logs/d2_1_ingest.log) |
+| `d2_2_vector_search` | 语义检索 + 精确编号检索 | 0 | [log](task4/logs/d2_2_vector_search.log) |
+| `d2_3_hybrid_search` | 混合搜索 + 版本过滤 | 0 | [log](task4/logs/d2_3_hybrid_search.log) |
+| `d2_4_compare` | 纯向量 vs 混合搜索对比 | 0 | [log](task4/logs/d2_4_compare.log) |
+| `d2_5_chunking_compare` | 四种分块策略 Recall 对比 | 0 | [log](task4/logs/d2_5_chunking_compare.log) |
+
+`d2_2` 仍需先补 `refresh_index()`（[log](task4/logs/d2_refresh_index.log)），这是 Task 3 定位到的 embedded 模式问题，未再重复排查。
+
+### 真实输出
+
+`d2_3`：混合搜索叠加 `version=4.2` 的标量过滤，返回 3 条全部满足版本条件。标量过滤把范围先收窄，这一步在纯向量检索里做不了。
+
+`d2_4`：同一条查询「数据库性能优化」，纯向量搜索第一名是「连接池配置」，混合搜索第一名才是「数据库查询性能优化指南」。关键词「性能优化」被全文检索这一路顶了上去——这就是混合搜索相对纯向量的实际差距，不是理论。
+
+`d2_5`：三种分块策略 Recall@3 全是 0%。这张表**不能当实验结果看**，日志里两条原因都写着：一是脚本检测到 `SILICONFLOW_API_KEY`（本机指向 DeepSeek）就去调 embedding，拿回 404，语义分块被跳过、检索降级到内存；二是检索走 seekdb 向量索引，而它在 embedded 模式下没建起来。环境问题，不是分块策略的结论。
+
+### 没做完的部分（不遮）
+
+任务要求的第二条——**通过 pyseekdb 执行 AI Function——没有跑通**。本机缺 embedding 模型服务：DeepSeek 不提供 embedding 接口，D2 的语义分块、D3 的 RAGAS 评测都卡在同一层。要继续，得开一个 SiliconFlow 账号，或换一个有 embedding 的 OpenAI 兼容服务。已记入待办。
+
+---
+
+## Task 5 P3 记忆系统设计 / I4 File SQL for AI Agent（9/28）
+
+截止 09-29 03:00，当晚交，压线。
+
+### 任务要求
+
+1. 理解记忆系统存储关键 value 的原理，安装 PowerContext 并体验记忆系统的相关能力
+2. 完成一条简单的 `select from read_csv(xxx.csv)` 流程
+
+### PowerContext 实跑
+
+安装走 PyPI（清华源）：`uv tool install --force "powercontext[cli,server]==0.1.0"`，起服务 `powercontext server run`，数据落本地 SQLite，监听 `127.0.0.1:8000`。
+
+自检（[log](task5/logs/powercontext_server_check.log)）：`live` → ok，`ready` → ready（database / runtime 都 ready）。`capabilities` 里几个开关值得记：工件族有 memory / experience / skill / handoff，搜索模式只有 `auto, fts`，**记忆抽取、经验生成、Handoff 生成全部是 disabled**——没配推理 provider，模型加工那部分不工作。
+
+记忆读写（[log](task5/logs/powercontext_memory_cycle.log)）：用 HTTP API 往 `project:datawhale-84` 这个 scope 写了三条 Memory——一条 `decision`（Task 2 换模型底座的原因）、一条 `constraint`（`refresh_index()` 那个坑）、一条 `outcome`（各 Task 完成情况）。检索用 `/v1/memory/search` 查 `refresh_index`，命中 2 条，FTS 可用。
+
+组装上下文没做出来：`/v1/context/prepare` 返回 `status: empty`、0 字节。检索只有 FTS、又没有推理 provider，组装不出 PreparedContext。
+
+这就是 P3 说的那件事的实证：**记忆系统的价值在 value，不在载体**。我存进去的是三条结论，原始材料（会话记录、日志）留在原地——不是把所有东西塞进库，而是把「以后还用得上」的那几句挑出来，标上 kind 和 reason。`kind` 分决策/约束/产出，比堆一坨聊天记录强得多。
+
+### File SQL（read_csv）
+
+按 I4 的体验路径直接跑：
+
+```sql
+SELECT file FROM glob('/workspace/*');
+DESCRIBE SELECT * FROM read_csv('/workspace/orders.csv');
+```
+
+**两条都报 1064 语法错误**——这个 seekdb 镜像不认 `glob` / `read_csv` 这两个函数名（[log](task5/logs/file_sql_read_csv.log)）。I4 的课程稿自己也写了这是「目标能力」、第一阶段有明确的非目标，所以方向是真的，当前镜像里没落地。
+
+退一步，用 I4 讲的另一条路线（数据导入）把同一件事做完：CSV 拷进容器 → 建表 → `LOAD DATA INFILE` → 查询。5 行入库，分组结果 C02 两单 4100.00、C01 一单 1200.00。
+
+两者的差别得说清楚：File SQL 是零建表、语句级临时关系，适合 Agent 随手查一个文件；导入是建表落库，能验证 SQL 链路，但验证不了「Agent 临时分析一个 CSV」这个场景。等镜像支持了再补。
+
+---
+
 ## 引用来源
 
 - 教程仓库：https://github.com/datawhalechina/easy-data-x-ai
@@ -253,6 +326,7 @@ refresh_index() 已执行 | 建索引后查询结果数: 3
 - Task 安排：https://my.feishu.cn/wiki/HvQuwKiSEi0mNBkGzjBcJaldnrd
 - 打卡表单：https://magicyang.feishu.cn/share/base/shrcnPJP4DBbYWnQrnUPrgRa7rf
 - 评测数据：教程仓库 `code/D3/reports/offline-evaluation.md`、`code/D3/reports/strategy-comparison.md`
-- 运行日志：本仓库 `task2/logs/*.log`、`task3/logs/*.log`（2026-09-21 实跑）
+- 运行日志：本仓库 `task2/logs/`、`task3/logs/`、`task4/logs/`、`task5/logs/`（2026-09-21 与 09-28 实跑）
+- PowerContext：https://github.com/oceanbase/powercontext （v0.1.0，`uv tool install "powercontext[cli,server]==0.1.0"`）
 - 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`
 - 环境与运行记录：2026-09-15 于 macOS 实测

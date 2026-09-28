@@ -1,0 +1,10 @@
+== memory/entries/list ==
+条数: 3
+ - constraint | rev None | pyseekdb 1.4.0.post1 在 embedded 模式下，写入后必须调用 collection.refre
+ - outcome | rev None | Task2（D1 d1_1~d1_6）与 Task3（D2 d2_1~d2_2）全部退出码 0，打卡已提交；Task4 
+ - decision | rev None | Datawhale 84期 Task2 的示例代码默认调 SiliconFlow 的 tencent/Hunyuan-M
+== memory/search 'refresh_index' ==
+ - Task2（D1 d1_1~d1_6）与 Task3（D2 d2_1~d2_2）全部退出码 0，打卡已提交；Task4 的 d2_1~d2_
+ - pyseekdb 1.4.0.post1 在 embedded 模式下，写入后必须调用 collection.refresh_index()
+== context/prepare ==
+ status: empty | schema: powercontext.prepared-context.v1 | bytes: 0
