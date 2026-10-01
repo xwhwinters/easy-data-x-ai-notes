@@ -1,0 +1,4 @@
+>>> 已完成 50 条可回答案例的检索三角实验
+>>> Hit@1：纯向量 0.72 / 混合检索 0.88
+>>> P95：纯向量 0.2328 ms / 混合检索 0.2594 ms
+>>> 报告：/Users/niuniu/Documents/Codex workspace/Personal/Datawhale_easy-data-x-ai/easy-data-x-ai/code/D3/reports/retrieval-triangle.md

@@ -1,0 +1,13 @@
+>>> 正在初始化 seekdb...
+>>> 集合已就绪：d3_product_kb
+
+>>> 已写入或更新 19 个知识片段
+
+>>> 知识库内容分布：
+    release_notes: 5 条
+    error_codes: 4 条
+    financial: 3 条
+    best_practices: 4 条
+    api_reference: 3 条
+
+>>> d3_1 完成！知识库已就绪，可运行 d3_2 / d3_3 继续体验。

@@ -14,7 +14,7 @@ Datawhale 第 84 期，队「日拱一卒」，1 群。9/14 开营，29 天 9 �
 | Task 3 | P2 RAG 产品设计 / I2 向量数据库与 RAG | 完成（提前 1 天） | 9/21 |
 | Task 4 | D2 统一 AI Native 数据层 / I3 SQL × AI | 完成（逾期补交，AI Function 待办） | 9/28 |
 | Task 5 | P3 记忆系统设计 / I4 File SQL for AI Agent | 完成（PowerContext 实跑） | 9/28 |
-| Task 6 | | | |
+| Task 6 | D3 Agentic RAG 实战 / I5 AI 列 | 完成（D3 六示例实跑；RAGAS 待 embedding 通道） | 10/2 |
 | Task 7 | | | |
 | Task 8 | | | |
 | Task 9 | | | |
@@ -319,6 +319,63 @@ DESCRIBE SELECT * FROM read_csv('/workspace/orders.csv');
 
 ---
 
+## Task 6 D3 Agentic RAG 实战 / I5 AI 列（10/2）
+
+截止 10-02 03:00，当晚交。
+
+### 任务要求
+
+1. 跑通 D3 的 Agentic RAG 链路：知识库写入 → Agent 自主决定是否检索 → 三种检索策略对比 → 生产化要点 → 离线评测 → 检索三角基准
+2. 阅读 I5《AI 列 —— 模型驱动派生数据的自动维护》
+
+### 运行记录
+
+六个示例全部实跑，日志在 `task6/logs/`。
+
+| 脚本 | 退出码 | 用时 | 关键输出 | 日志 |
+| --- | ---: | ---: | --- | --- |
+| `d3_1_ingest.py` | 0 | 1s | 19 个知识片段入库（release_notes 5 / error_codes 4 / best_practices 4 / financial 3 / api_reference 3） | [log](task6/logs/d3_1_ingest.log) |
+| `d3_2_agentic_rag.py` | 0 | 11s | 4 个问题，模型自主决定是否检索 | [log](task6/logs/d3_2_agentic.log) |
+| `d3_3_compare.py` | 0 | 3s | 5 个场景：纯向量命中 1/5，增强检索 3/5 | [log](task6/logs/d3_3_compare.log) |
+| `d3_4_production.py` | 0 | 3s | 工具描述 / top_k / 增量更新三要点 | [log](task6/logs/d3_4_production.log) |
+| `d3_5_evaluate.py` | 0 | <1s | 60 条离线评测，Hit@3 = 1.0，拒答准确率 1.0 | [log](task6/logs/d3_5_evaluate.log) |
+| `d3_6_benchmark.py` | 0 | 1s | 50 条检索三角，Hit@1 0.72 → 0.88 | [log](task6/logs/d3_6_benchmark.log) |
+
+### 真实输出
+
+**离线评测（`d3_5_evaluate`）**：60 条案例、失败 0。Hit@1 0.92、Hit@3 1.0、MRR 0.9533、上下文精确率 0.3813、上下文召回率 1.0、拒答准确率 1.0；六类用例（alias_rewrite / boundary / exact_identifier / insufficient_evidence / multi_hop / semantic）通过率全为 1.0，检索 P50 0.53 ms、P95 0.95 ms。这是确定性离线基线，与 Task 1 的口径一致，可以拿它对照后面的真实模型链路。
+
+**检索三角（`d3_6_benchmark`）**：50 条可回答案例、每种策略 1500 次采样。纯向量 Hit@1 0.72 / Hit@3 0.76 / MRR 0.74；混合检索 Hit@1 0.88 / Hit@3 0.98 / MRR 0.92。代价是 P95 0.2328 → 0.2594 ms（+11.4%）、平均上下文 Token 70.36 → 96.60（+37.3%，按示例单价折 CNY 0.0704 → 0.0966 / 千次查询）。16 个百分点的 Hit@1 换 11.4% 的 P95 和 37.3% 的上下文，这笔账怎么算取决于答错一次的代价——错误码、版本号、函数名占比高或答错代价高的场景，混合检索值；查询几乎都是语义改写、延迟预算又紧，纯向量基线够用。
+
+**三种策略对比（`d3_3_compare`）**：5 个教学场景里纯向量只命中 1 个、增强检索命中 3 个。失败的两例很说明问题：「2024年Q3的营收情况」两种都答成了 Q1——相邻季度的向量太近，语义检索分不出这个差别；「DBMS_HYBRID_SEARCH 函数的用法」纯向量只找到讲混合检索的 FAQ，混合检索才精确命中函数说明。版本号那例反过来验证同一件事：OB-4.2.1 这种带点号的精确标识符，全文分词器切不开，靠的是向量加元数据过滤。**语义相近不等于答案正确**，精确标识符得靠关键词分支兜住。
+
+**Agentic RAG（`d3_2_agentic_rag`）**：四个问题跑通了「自主决定要不要检索」。问连接数上限、Q3 营收，Agent 先检索再作答，Q3 那题还按知识库口径列了收入构成表；问「今天天气怎么样」，它不去检索，直接说明自己只负责产品技术问题。路由行为在模型侧完成，示例里没有 if-else 规则——这是 Agentic RAG 与固定管线 RAG 的差别所在。
+
+**生产化三要点（`d3_4_production`）**：模糊与清晰两版工具描述都被正确调用，这次没拉开差距；top_k 取 1/3/5/8 时返回条数线性变化；增量写入 1 条后知识库从 19 条变 20 条（`upsert` 幂等，重复运行不会翻倍）。
+
+### 踩坑
+
+- **模型名写死，中转直接 400**。`.env` 指向的接口只认 `deepseek-flash` / `deepseek-v4-pro`，而 d3_2 / d3_4 里 `MODEL = "deepseek-ai/DeepSeek-V3"` 是写死的。写了个 `task6/d3_runner.py`，加载模块后覆盖该常量再调 `main()`——课程代码一行未改，两个脚本都跑通。
+- **`d3_3_compare` 必须在 ingest 之后跑**。先跑它会以「未找到知识库」退出（rc=1），我第一遍就撞上了，`d3_1` 写完之后再跑才正常。
+- **embedded 模式的老坑还在**。写入后要补 `refresh_index()` 才检索得到（Task 3 已定位，这次没再踩）。
+- **RAGAS 评测卡在 embedding**。`d3_5_ragas_eval.py --check-config` 报缺 `RAGAS_EMBEDDING_MODEL`：本机两个 provider（SILICONFLOW / DASHSCOPE）都指向 DeepSeek，不提供 embedding 接口。所以 `--mode ragas` 这一条**没跑**，如实记在这里，等有 embedding 通道再补。
+- 脚本别放 `/tmp`——macOS 会周期性清理，表单脚本那次踩过。这次运行器和日志都直接落在笔记仓库里。
+
+### 导读收获（I5 AI 列）
+
+I5 讲的是把模型调用从应用层下沉进数据库：`language VARCHAR(32) AI COLUMN (AI_COMPLETE('doc_complete_model', CONCAT('Return only the language name. Content: ', content)))` 这样声明一列之后，用户维护源数据，数据库维护派生数据。
+
+第一层是概念上的分界。AI 列看着像「多了个 AI 函数的生成列」，其实不是：普通生成列在数据库进程内算，延迟短、确定性高、失败只有表达式和类型错；AI 列算在外部模型服务上，延迟从毫秒到秒级，输出受模型版本和采样影响，还会遇上网络超时、限流、协议错误，而且要花 Token 钱。所以它是一类需要异步可见性、版本控制、失败恢复和索引一致性的新数据对象，不是「多了一个函数」。
+
+第二层是它替应用扛了什么。课程把链路拆得很细：INSERT 时为新行建立生成工作；UPDATE 只在依赖列发生变化时才重算；DELETE 之后迟到的模型结果不能把数据复活。读的时候分非严格读取（可能看到尚未生成的空值）和严格读取（等这一组结果整体发布）；失败可以按行重试；事务回滚、请求乱序（旧请求晚于新请求返回时按版本丢弃）、并发更新、事务中崩溃这些边界都有对应行为。**这些恰恰是应用层自己写异步任务时最容易漏掉的部分**——生成第一版结果谁都能做，难的是源数据改了以后，派生数据还可不可信。
+
+第三层是边界。跨行跨表推理、多轮对话、Tool Calling、多模态、复杂 Agent 编排，仍然应该留在应用层；AI 列适合「输入就在数据库行里、结果要长期留着、后面会被 SQL 或索引用到」的场景。费用那节也实在：按真实 Token 计费评估，而不是只看命中率。
+
+对照这几天跑的东西：D3 里手写的检索、生成、引用校验，本质就是 I5 说的「应用层那条链路」；I5 给的是它的数据库版本。两者不是替代关系——**先把应用层那条链路自己写一遍，才知道哪些步骤值得交给数据库扛**。
+
+
+---
+
 ## 引用来源
 
 - 教程仓库：https://github.com/datawhalechina/easy-data-x-ai
@@ -326,7 +383,7 @@ DESCRIBE SELECT * FROM read_csv('/workspace/orders.csv');
 - Task 安排：https://my.feishu.cn/wiki/HvQuwKiSEi0mNBkGzjBcJaldnrd
 - 打卡表单：https://magicyang.feishu.cn/share/base/shrcnPJP4DBbYWnQrnUPrgRa7rf
 - 评测数据：教程仓库 `code/D3/reports/offline-evaluation.md`、`code/D3/reports/strategy-comparison.md`
-- 运行日志：本仓库 `task2/logs/`、`task3/logs/`、`task4/logs/`、`task5/logs/`（2026-09-21 与 09-28 实跑）
+- 运行日志：本仓库 `task2/logs/`、`task3/logs/`、`task4/logs/`、`task5/logs/`、`task6/logs/`（2026-09-21、09-28、10-02 实跑）
 - PowerContext：https://github.com/oceanbase/powercontext （v0.1.0，`uv tool install "powercontext[cli,server]==0.1.0"`）
-- 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`
+- 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`、`docs/dev/D3 课程稿：Agentic RAG 实战.md`、`docs/industry/I5 课程稿：AI 列 —— 模型驱动派生数据的自动维护.md`
 - 环境与运行记录：2026-09-15 于 macOS 实测
