@@ -17,7 +17,7 @@ Datawhale 第 84 期，队「日拱一卒」，1 群。9/14 开营，29 天 9 �
 | Task 6 | D3 Agentic RAG 实战 / I5 AI 列 | 完成（D3 六示例实跑；RAGAS 待 embedding 通道） | 10/2 |
 | Task 7 | P4 Skill 与 Agent 知识管理 / I6 上下文工程 | 完成（Skill 盘点实数据 + I6 验收流程逐条对照） | 10/7 补做 |
 | Task 8 | D4 Agent 记忆系统开发 / I7 PowerContext 的设计与实现 | 完成（D4 八个示例全部实跑） | 10/7 |
-| Task 9 | | | |
+| Task 9 | P5 综合案例与度量 / D5 课程总结 / I8 案例场景和测评构建 | 完成（逾期 3 天补做；P5 离线评测＋API＋100 条流量实跑，Docker 监控栈未跑） | 10/14 补做 |
 
 ---
 
@@ -493,6 +493,103 @@ I7 讲 PowerContext 作为一套上下文 / 记忆系统在设计上如何取舍
 
 **冷层检索需要显式打开。** d4_7 日常检索返回「无结果」是设计行为，不是失败。判断检索类示例是否通过，要看 `include_cold` 这类开关有没有按预期生效，不能只看退出码。
 
+## Task 9 P5 综合案例与度量 / D5 课程总结 / I8 案例场景和测评构建（10/14 补做）
+
+任务窗口是 10/9–10/10（截止 10-11 03:00），我 10/14 才补做，逾期三天。原因不遮：这一关没有卡点式的技术障碍，被排到了最后，撞上了另一个项目的交付周。84 期到此结束，没有下一个 Task 了。
+
+### 任务要求
+
+P5 是道篇最后一课：三层度量框架（数据层 / 模型层 / 业务层）加两个综合案例（企业知识库助手、有记忆的 AI 助手），并把案例真正跑起来——离线评测 → Agent API → Prometheus Metrics → Grafana → LangSmith → ROI。D5 是术篇总结，把 D1 Tool Use、D2 数据层、D3 Agentic RAG、D4 记忆系统串成一条主线。I8 是产业篇第 8 节，**当前页面上只有方向和共建边界，正文尚未开发**（`docs/industry/I8 课程稿：案例场景和测评构建.md` 共 35 行），没有可跑的材料。
+
+### 运行记录（P5 六步我跑到哪一步）
+
+| 步骤 | 命令 | 结果 | 日志 |
+|---|---|---|---|
+| ① 离线评测 | `python -m app.evaluation.run_eval` | 退出码 0，30 条标注样本，产出 `outputs/evaluation_report.{md,json}` | [log](task9/logs/p5_run_eval.log) |
+| ② ROI 计算器 | `python -m app.roi.calculator --config config/roi_scenarios.yaml --output-dir outputs` | 退出码 0，一次运行出三情景的 Markdown / JSON / CSV | [log](task9/logs/p5_roi_calculator.log) |
+| ③ 单元测试 | `python -m unittest discover -s tests -v` | 38 项全过，0.150 秒 | [log](task9/logs/p5_unittest.log) |
+| ④ Agent API | `uvicorn app.main:app --host 127.0.0.1 --port 8123` | `/health` 返回 `{"status":"ok"}`；`/ask` 真返回答案与 metadata | [log](task9/logs/p5_uvicorn_api.log) |
+| ⑤ 制造流量 | `python -m app.observability.generate_traffic --count 100` | 退出码 0，100 条全部 2xx | [log](task9/logs/p5_generate_traffic.log) |
+| ⑥ Prometheus + Grafana | `docker compose up --build` | **没跑**：本机 Docker daemon 未启动（`docker info` 失败），只做了本地 `/metrics` | — |
+
+第 ③ 步里 `test_roi` 有一项断言是「基准情景与文档里的首年示例一致」——把文档和代码钉在一起，比单测算出来的数更值得抄。
+
+### 真实数据
+
+**离线评测（30 条标注样本，报告见 [`task9/reports/p5_evaluation_report.md`](task9/reports/p5_evaluation_report.md)）**
+
+| 层 | 指标 | 实测 |
+|---|---|---:|
+| 数据层 | 知识覆盖率 | 82.76% |
+| 数据层 | 检索命中率 | 95.83% |
+| 数据层 | 检索故障率 | 3.33% |
+| 模型层 | 回答准确率 | 96.67% |
+| 模型层 | 幻觉率 | 3.33% |
+| 业务层 | 任务成功率 | 73.33% |
+| 业务层 | 转人工率 | 23.33% |
+| 业务层 | 行为一致率 | 100.00% |
+| 运行层 | 工具成功率 | 80.00% |
+| 运行层 | 平均延迟 / 平均 Token | 108.67 ms / 23.53 |
+
+30 条里翻车的几条正好落在三层上：`general-008` 与 `missing-001`~`004` 是知识库里没有答案（转人工），`tool-005` 是工具调用失败，`exception-002` 是答案不正确加幻觉。**82.76% 的知识覆盖率就是这套系统的天花板**——剩下那部分问题，模型再强也只能说不知道。
+
+**单条请求（POST /ask 实跑）**
+
+```json
+{"answer":"标准退款申请需要在订单完成后 7 天内提交，并提供订单号和退款原因。","retrieval_hit":true,
+ "matched_doc_id":"kb-general-refund","task_success":true,"hallucinated":false,
+ "latency_ms":75,"token_usage":22,"cost":0.00044}
+```
+
+**注入 100 条 Demo 流量后的 `/metrics`**（含此前手动那 1 条，累计 101；快照 [`task9/logs/p5_metrics_snapshot.txt`](task9/logs/p5_metrics_snapshot.txt)）：
+
+| PromQL 口径 | 分子 / 分母 | 读出 |
+|---|---|---:|
+| 知识覆盖率 | 45 / 87 | 51.7% |
+| 检索命中率 | 30 / 45 | 66.7% |
+| 回答准确率 | 87 / 101 | 86.1% |
+| 幻觉率 | 14 / 101 | 13.9% |
+| 任务成功率 | 16 / 101 | 15.8% |
+| 转人工率 | 71 / 101 | 70.3% |
+| 检索故障率 | 14 / 101 | 13.9% |
+| 工具成功率 | (14 - 14) / 14 | 0% |
+
+流量脚本自己报的构成：`success=15, retrieval_miss=15, retrieval_failure=14, missing_knowledge=14, hallucination=14, handoff=14, tool_failure=14`。
+
+**同一套系统，两个数差了一个量级：离线评测读「任务成功率 73.33%」，注入流量后 Dashboard 读「15.8%」。** 两个数都不假，差别在分母——流量脚本按七类样本轮流发，七类里六类是故障类，所以指标面板立刻一片红。这个对照比课程原话更锋利：**看指标之前先问一句「这个分母是怎么来的」。** 反过来也成立，离线那 30 条并不是真实业务分布，它只是把口径固定住。两者一个用来验链路、一个用来演示可观测性，都不能当业务结论。同理，`工具成功率 0%` 不是工具坏了，是这一轮流量把 `tool_failure` 样本故意灌满了。
+
+**延迟也有两个口径。** `agent_request_duration_seconds` 的 101 次观测全部落在 `le=0.005` 桶里、`_sum = 0.00275 秒`（均值约 27 微秒），而响应体里写的是 `latency_ms: 75`。前者是服务端真实处理耗时，后者是本地 mock 造出来的演示值。Dashboard 上的 P95 只能代表「API 转一圈要多久」，代表不了「用户等多久」。
+
+**ROI（12 个月，CNY，报告见 [`task9/reports/p5_roi_report.md`](task9/reports/p5_roi_report.md)）**
+
+| 情景 | 月任务量 | 总成本 | 总收益 | 净收益 | ROI | 回收期（月） | 盈亏平衡任务量/月 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| conservative | 80 | 14,900 | 11,256 | -3,644 | -24.46% | 107.89 | 115 |
+| base | 100 | 13,600 | 22,800 | 9,200 | 67.65% | 3.64 | 52 |
+| optimistic | 140 | 13,648 | 39,432 | 25,784 | 188.92% | 1.61 | 37 |
+
+三行里最该记住的是第二列和最后一列的关系：基准情景月任务量 100、盈亏平衡只要 52——**同一个成本结构，业务量掉到一半就回不了本**。ROI 不是给「这个 AI 好不好用」打分，它算的是「你的量撑不撑得住这套投入」。这三张表全是教学假设，不能当预测。
+
+### 踩坑
+
+1. **Docker daemon 没起来，Prometheus/Grafana 那一步就没跑。** 本地这条链路（离线评测 → API → `/metrics` → 流量）是完整的，Docker 只影响可视化那一段。补这一步不需要写代码，只需要人打开一次 Docker Desktop。
+2. **命令行里带空格的路径不加引号会静默失败。** 第一次发流量时 `.venv/bin/python` 的绝对路径没加引号，`env` 把它当两段解析，报 `Permission denied`、退出码 126——一条流量都没发出去，日志文件还是空的。
+3. **`python -m` 必须在 `code/P5` 目录里跑**（README 写明），换目录就 import 不到 `app`。另外本机 `.venv` 已装齐 P5 依赖（PyYAML / fastapi / uvicorn / prometheus-client / langsmith / httpx2），不必新建环境。
+4. **I8 是开发中占位页**，只有「计划内容」和参考链接，没有实验与验收方式。不假装读过它的正文——这一关真正有内容的是 P5 和 D5。
+5. 端口别撞：本地 Uvicorn 与容器里的 Agent 默认都占 `8000`，改到 `8123` 跑，避免和别的东西打架。
+
+### 导读收获
+
+**P5 的三层度量框架。** 数据层看「数据在不在、找不找得到」（知识覆盖率 / 检索命中率 / 记忆召回准确率），模型层看「答案对不对」（答案准确率 / 幻觉率 / 推理一致性），业务层看「结果好不好」（任务完成率 / 满意度 / 首次解决率）。运行层（延迟、Token、成本、工具成功率）是工程补充，不是第四个归因层。核心判断只有一句：**问题出在哪一层，解法就应该在哪一层**——把数据层问题误诊成模型层问题，是这门课里最贵的错误（课程给的例子：一家公司花 200 万换模型，满意度提升不到 5%；另一家花 20 万整理知识库，提升 40%）。
+
+**ROI 的链路是单向的。** 知识覆盖率 → 检索命中率 → 回答准确率 → 转人工减少、成功任务增加、风险事件减少 → 人工节省、收入提升、风险降低。这四个诊断指标不能各自折成收益再相加，否则同一次问题解决会被算两遍。而且 ROI 的输入要分两类：系统观测数据（月任务量、转人工率、成功率、风险率、单任务成本）来自日志与评测，业务假设（人工单价、成功任务价值、风险损失）来自业务负责人——混在一起算，出来的数字谁都不认。
+
+**D5 的一句话。** D1 Tool Use、D2 数据层、D3 Agentic RAG、D4 记忆系统，四个模块做的事不一样，拆到底是同一件事：**Agent 的每一项能力，都是数据的存储与检索；数据层的质量决定能力上限。** D5 留的三条课后行动里，「在自己的知识库上做纯向量 vs 混合检索对比」这一条，我在 Task 4 和 Task 6 已经用真实数据撞过一遍了。
+
+**I8 的方向。** 把前七节的能力放回真实任务：从业务目标拆出任务、数据、约束和失败成本；测检索质量、回答质量、延迟、成本和引用正确性；分清确定性回放、在线运行与离线重评分；把输入、输出、Memory、PreparedContext 和执行轨迹都记下来。它引的参考是 PowerContext 的端到端测评架构 RFC。这几条和 Task 7 拿 I6 验收清单去撞系统是同一路数：**证据要可复现，单次演示和单个基准数字都不能当结论。**
+
+**课后行动（P5 三条，落到自己手上）。** 拿手上那个门店类业务（一线反复问流程和标准，同一批问题被问很多遍）把三层指标写一遍——数据层：SOP 的覆盖率（现在版本多、散在几处，估算连 70% 都不到）、检索命中率（现在基本靠关键词）；模型层：答案准确率与幻觉率（这一层还没测过，数据层没收干净之前测了也不作数）；业务层：首次解决率与转人工次数（一线现在靠群里问人，转人工率接近 100%）。再对照资源投入：现在的时间和钱几乎全花在「找个更好用的模型或工具」上。P5 第一条课后行动要的那份诚实判断是——**先投数据层**。
+
 ## 引用来源
 
 - 教程仓库：https://github.com/datawhalechina/easy-data-x-ai
@@ -500,7 +597,8 @@ I7 讲 PowerContext 作为一套上下文 / 记忆系统在设计上如何取舍
 - Task 安排：https://my.feishu.cn/wiki/HvQuwKiSEi0mNBkGzjBcJaldnrd
 - 打卡表单：https://magicyang.feishu.cn/share/base/shrcnPJP4DBbYWnQrnUPrgRa7rf
 - 评测数据：教程仓库 `code/D3/reports/offline-evaluation.md`、`code/D3/reports/strategy-comparison.md`
-- 运行日志：本仓库 `task2/logs/`、`task3/logs/`、`task4/logs/`、`task5/logs/`、`task6/logs/`、`task8/logs/`（2026-09-21、09-28、10-02、10-07 实跑）
+- 运行日志：本仓库 `task2/logs/`、`task3/logs/`、`task4/logs/`、`task5/logs/`、`task6/logs/`、`task8/logs/`、`task9/logs/`（2026-09-21、09-28、10-02、10-07、10-14 实跑）
+- Task 9 评测与 ROI 报告：本仓库 `task9/reports/p5_evaluation_report.md`、`task9/reports/p5_roi_report.md`、`task9/reports/p5_scenario_comparison.csv`（P5 代码 2026-10-14 实跑）
 - PowerContext：https://github.com/oceanbase/powercontext （v0.1.0，`uv tool install "powercontext[cli,server]==0.1.0"`）
-- 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`、`docs/dev/D3 课程稿：Agentic RAG 实战.md`、`docs/industry/I5 课程稿：AI 列 —— 模型驱动派生数据的自动维护.md`、`docs/pm/P4 课程稿：Skill 与 Agent 知识管理.md`、`docs/industry/I6 课程稿：上下文工程概述.md`、`docs/dev/D4 课程稿：Agent 开发与记忆系统.md`、`docs/industry/I7 课程稿：PowerContext 的设计与实现.md`
-- 环境与运行记录：2026-09-15、2026-10-07 于 macOS 实测
+- 课程稿：`docs/pm/P1 课程稿：AI Agent 场景识别.md`、`docs/dev/D1 课程稿：大模型 API 工程化基础.md`、`docs/dev/D3 课程稿：Agentic RAG 实战.md`、`docs/industry/I5 课程稿：AI 列 —— 模型驱动派生数据的自动维护.md`、`docs/pm/P4 课程稿：Skill 与 Agent 知识管理.md`、`docs/industry/I6 课程稿：上下文工程概述.md`、`docs/dev/D4 课程稿：Agent 开发与记忆系统.md`、`docs/industry/I7 课程稿：PowerContext 的设计与实现.md`、`docs/pm/P5 课程稿：综合案例与度量.md`、`docs/dev/D5 课程稿：课程总结.md`、`docs/industry/I8 课程稿：案例场景和测评构建.md`（I8 正文尚未开发）
+- 环境与运行记录：2026-09-15、2026-10-07、2026-10-14 于 macOS 实测
